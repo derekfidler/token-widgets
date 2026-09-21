@@ -1,0 +1,98 @@
+name: TokenWidgets
+options:
+  bundleIdPrefix: dev.flatpay.tokenwidgets
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ESYNZ5PVA4
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "5"
+    GENERATE_INFOPLIST_FILE: true
+
+targets:
+  TokenWidgetsApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: TokenWidgetsApp
+      - path: Shared
+    info:
+      path: TokenWidgetsApp/Info.plist
+      properties:
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.utilities
+        CFBundleDisplayName: Token Widgets
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+    entitlements:
+      path: TokenWidgetsApp/TokenWidgetsApp.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - ESYNZ5PVA4.dev.flatpay.tokenwidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.flatpay.tokenwidgets.app
+        PRODUCT_NAME: TokenWidgets
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: true
+        SUPPORTS_MACCATALYST: false
+    dependencies:
+      - target: TokenWidgetsWidgetExtension
+        embed: true
+
+  TokenWidgetsWidgetExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: TokenWidgetsWidget
+      - path: Shared
+    info:
+      path: TokenWidgetsWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Token Widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: TokenWidgetsWidget/TokenWidgetsWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - ESYNZ5PVA4.dev.flatpay.tokenwidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.flatpay.tokenwidgets.app.widget
+        PRODUCT_NAME: TokenWidgetsWidgetExtension
+        ENABLE_HARDENED_RUNTIME: true
+        SKIP_INSTALL: true
+
+  TokenWidgetsTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: TokenWidgetsTests
+    dependencies:
+      - target: TokenWidgetsApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.flatpay.tokenwidgets.tests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TokenWidgets.app/Contents/MacOS/TokenWidgets"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  TokenWidgetsApp:
+    build:
+      targets:
+        TokenWidgetsApp: all
+    run:
+      config: Debug
+    test:
+      targets:
+        - TokenWidgetsTests
