@@ -104,7 +104,7 @@ enum DateDecoding {
 /// Enterprise (API-key) credentials take priority if both are somehow configured.
 enum UsageRefreshCoordinator {
     /// On a failed fetch, falls back to `previous`'s values (with the error attached)
-    /// so the widget keeps showing last-known-good data instead of going blank.
+    /// so temporary failures can keep showing last-known-good data.
     static func fetchSnapshot(previous: UsageSnapshot) async -> UsageSnapshot {
         async let claude = fetchClaude(previous: previous.claude)
         async let chatgpt = fetchChatGPT(previous: previous.chatgpt)
@@ -135,13 +135,21 @@ enum UsageRefreshCoordinator {
         return .unconfigured("ChatGPT / Codex")
     }
 
-    private static func run(_ fetcher: ProductUsageFetcher, previous: ProductUsage) async -> ProductUsage {
+    static func run(_ fetcher: ProductUsageFetcher, previous: ProductUsage) async -> ProductUsage {
         do {
             let result = try await fetcher.fetch()
             await DebugLog.shared.append("[\(previous.productName)] OK: \(result.mode) \(result.rateLimitWindows.count) windows")
             return result
         } catch {
             await DebugLog.shared.append("[\(previous.productName)] ERROR: \(error.localizedDescription)")
+            let needsReconnect: Bool
+            switch error {
+            case FetcherError.unauthorized, FetcherError.usageUnauthorized:
+                needsReconnect = true
+            default:
+                // A temporary network failure cannot establish that the session recovered.
+                needsReconnect = previous.needsReconnect
+            }
             guard previous.mode != .unavailable else {
                 return ProductUsage(
                     productName: previous.productName,
@@ -149,18 +157,20 @@ enum UsageRefreshCoordinator {
                     rateLimitWindows: [],
                     spend: nil,
                     lastUpdated: Date(),
-                    errorMessage: error.localizedDescription
+                    errorMessage: error.localizedDescription,
+                    reconnectRequired: needsReconnect
                 )
             }
-            // Keep the last-good values on screen; just surface the error and leave lastUpdated as-is
-            // so the widget can indicate the data is stale.
+            // Preserve last-good values and their timestamp. The widget replaces them with
+            // a reconnect notice when authentication needs attention.
             return ProductUsage(
                 productName: previous.productName,
                 mode: previous.mode,
                 rateLimitWindows: previous.rateLimitWindows,
                 spend: previous.spend,
                 lastUpdated: previous.lastUpdated,
-                errorMessage: error.localizedDescription
+                errorMessage: error.localizedDescription,
+                reconnectRequired: needsReconnect
             )
         }
     }
