@@ -22,8 +22,8 @@ struct TokenWidgetsWidgetView: View {
     /// whichever one is configured with full detail instead of wasting half the space.
     @ViewBuilder
     private var smallView: some View {
-        let claudeActive = snapshot.claude.mode != .unavailable
-        let chatgptActive = snapshot.chatgpt.mode != .unavailable
+        let claudeActive = snapshot.claude.isVisibleInCompactWidget
+        let chatgptActive = snapshot.chatgpt.isVisibleInCompactWidget
 
         if claudeActive && chatgptActive {
             VStack(alignment: .leading, spacing: 10) {
@@ -50,36 +50,40 @@ private struct CompactRow: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            switch usage.mode {
-            case .unavailable:
-                Text("—")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            if usage.needsReconnect {
+                ReconnectNotice()
+            } else {
+                switch usage.mode {
+                case .unavailable:
+                    Text("—")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.secondary)
 
-            case .spend:
-                if let spend = usage.spend {
-                    Text(spend.amountSpentUSD, format: .currency(code: "USD"))
-                        .font(.system(size: 16, weight: .bold))
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                }
-
-            case .percentLimits:
-                if let window = preferredWindow {
-                    HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(window.label)
-                            .font(.system(size: 10, weight: .medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 2)
-                        Text("\(Int(window.percentRemaining))% left")
-                            .font(.system(size: 10, weight: .semibold))
+                case .spend:
+                    if let spend = usage.spend {
+                        Text(spend.amountSpentUSD, format: .currency(code: "USD"))
+                            .font(.system(size: 16, weight: .bold))
+                            .minimumScaleFactor(0.7)
                             .lineLimit(1)
                     }
-                    LimitProgressBar(percentRemaining: window.percentRemaining)
-                    Text("Resets \(window.resetsAt, style: .relative)")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+
+                case .percentLimits:
+                    if let window = preferredWindow {
+                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                            Text(window.label)
+                                .font(.system(size: 10, weight: .medium))
+                                .lineLimit(1)
+                            Spacer(minLength: 2)
+                            Text("\(Int(window.percentRemaining))% left")
+                                .font(.system(size: 10, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        LimitProgressBar(percentRemaining: window.percentRemaining)
+                        Text("Resets \(window.resetsAt, style: .relative)")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
         }
@@ -108,28 +112,32 @@ private struct ProductCard: View {
             Text(usage.productName)
                 .font(.system(size: 13, weight: .semibold))
 
-            switch usage.mode {
-            case .unavailable:
-                Text(usage.errorMessage ?? "Not configured")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-            case .spend:
-                if let spend = usage.spend {
-                    Text(spend.amountSpentUSD, format: .currency(code: "USD"))
-                        .font(.system(size: 22, weight: .bold))
-                    Text(spend.periodLabel)
+            if usage.needsReconnect {
+                ReconnectNotice()
+            } else {
+                switch usage.mode {
+                case .unavailable:
+                    Text(usage.errorMessage ?? "Not configured")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                }
 
-            case .percentLimits:
-                ForEach(usage.rateLimitWindows.prefix(maxWindows)) { window in
-                    RateLimitRow(window: window)
+                case .spend:
+                    if let spend = usage.spend {
+                        Text(spend.amountSpentUSD, format: .currency(code: "USD"))
+                            .font(.system(size: 22, weight: .bold))
+                        Text(spend.periodLabel)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+
+                case .percentLimits:
+                    ForEach(usage.rateLimitWindows.prefix(maxWindows)) { window in
+                        RateLimitRow(window: window)
+                    }
                 }
             }
 
-            if usage.mode != .unavailable, usage.lastUpdated != .distantPast {
+            if !usage.needsReconnect, usage.mode != .unavailable, usage.lastUpdated != .distantPast {
                 Text("Updated \(usage.lastUpdated, style: .relative)")
                     .font(.system(size: 9))
                     .foregroundStyle(statusColor)
@@ -139,6 +147,20 @@ private struct ProductCard: View {
 
     private var statusColor: Color {
         usage.errorMessage != nil || AppSettings.isStale(usage) ? .orange : .secondary
+    }
+}
+
+private struct ReconnectNotice: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label("Reconnect required", systemImage: "exclamationmark.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.orange)
+            Text("Open Token Widgets settings to reconnect.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

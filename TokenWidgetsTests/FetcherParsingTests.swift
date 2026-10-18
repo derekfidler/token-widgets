@@ -4,6 +4,58 @@ import XCTest
 final class FetcherParsingTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    private struct StubFetcher: ProductUsageFetcher {
+        let result: Result<ProductUsage, Error>
+        func fetch() async throws -> ProductUsage { try result.get() }
+    }
+
+    func testExpiredSessionSurvivesCacheAndTransientErrorsUntilReconnect() async throws {
+        let good = ProductUsage(
+            productName: "Claude", mode: .percentLimits,
+            rateLimitWindows: [RateLimitWindow(label: "Weekly", percentRemaining: 80, resetsAt: now)],
+            spend: nil, lastUpdated: now, errorMessage: nil
+        )
+        let expired = await UsageRefreshCoordinator.run(
+            StubFetcher(result: .failure(FetcherError.unauthorized)), previous: good
+        )
+        let cached = try JSONDecoder().decode(ProductUsage.self, from: JSONEncoder().encode(expired))
+        XCTAssertTrue(cached.needsReconnect)
+        XCTAssertTrue(cached.isVisibleInCompactWidget)
+        XCTAssertEqual(cached.rateLimitWindows, good.rateLimitWindows)
+        XCTAssertEqual(cached.lastUpdated, good.lastUpdated)
+
+        let offline = await UsageRefreshCoordinator.run(
+            StubFetcher(result: .failure(URLError(.notConnectedToInternet))), previous: cached
+        )
+        XCTAssertTrue(offline.needsReconnect)
+        let recovered = await UsageRefreshCoordinator.run(
+            StubFetcher(result: .success(good)), previous: offline
+        )
+        XCTAssertFalse(recovered.needsReconnect)
+    }
+
+    func testReconnectWithoutCachedUsageRemainsVisible() async {
+        for error in [FetcherError.unauthorized, .usageUnauthorized] {
+            let usage = await UsageRefreshCoordinator.run(
+                StubFetcher(result: .failure(error)), previous: .unconfigured("ChatGPT / Codex")
+            )
+            XCTAssertTrue(usage.needsReconnect)
+            XCTAssertTrue(usage.isVisibleInCompactWidget)
+        }
+        let offline = await UsageRefreshCoordinator.run(
+            StubFetcher(result: .failure(URLError(.timedOut))), previous: .unconfigured("Claude")
+        )
+        XCTAssertFalse(offline.needsReconnect)
+    }
+
+    func testOldCacheStillDecodesAndShowsExpiredSession() throws {
+        let data = Data(#"{"productName":"Claude","mode":"unavailable","rateLimitWindows":[],"lastUpdated":0,"errorMessage":"Session expired — reconnect"}"#.utf8)
+        let usage = try JSONDecoder().decode(ProductUsage.self, from: data)
+        XCTAssertTrue(usage.needsReconnect)
+        XCTAssertTrue(usage.isVisibleInCompactWidget)
+        XCTAssertFalse(ProductUsage.unconfigured("Claude").isVisibleInCompactWidget)
+    }
+
     func testClaudePersonalRateLimitsAreParsedAndClamped() throws {
         let data = Data(#"""
         {

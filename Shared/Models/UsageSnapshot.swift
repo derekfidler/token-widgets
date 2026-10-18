@@ -28,6 +28,17 @@ struct ProductUsage: Codable, Hashable {
     let spend: SpendSummary?
     let lastUpdated: Date
     let errorMessage: String?
+    // Optional so caches written by older versions continue to decode.
+    var reconnectRequired: Bool? = nil
+
+    var needsReconnect: Bool {
+        reconnectRequired ?? (errorMessage == "Session expired — reconnect"
+            || errorMessage == "Usage access was rejected — reconnect or check the selected workspace")
+    }
+
+    var isVisibleInCompactWidget: Bool {
+        mode != .unavailable || needsReconnect
+    }
 
     static func unconfigured(_ productName: String) -> ProductUsage {
         ProductUsage(
